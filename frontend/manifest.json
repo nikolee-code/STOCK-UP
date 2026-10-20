@@ -1,0 +1,10 @@
+{
+  "name": "Stock Up",
+  "short_name": "Stock Up",
+  "description": "Gestión empresarial, inventario y ventas",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F1F3F2",
+  "theme_color": "#0F3D2E",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

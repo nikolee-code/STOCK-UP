@@ -1,0 +1,17 @@
+# Contraseñas y claves: nunca se suben
+.env
+.env.*
+backend/.env
+
+# Entorno de Python y archivos temporales
+venv/
+backend/venv/
+__pycache__/
+*.pyc
+
+# Bases de datos locales
+*.db
+*.sqlite3
+
+# Configuración personal de VS Code
+.vscode/
