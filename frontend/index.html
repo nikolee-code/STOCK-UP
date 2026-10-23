@@ -1,47 +1,49 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stock Up</title>
-  <link rel="manifest" href="/manifest.json">
+  <meta name="description" content="Gestión de inventario, ventas y caja">
   <meta name="theme-color" content="#0F3D2E">
-  <link rel="icon" href="/icon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/brand.png" type="image/png">
+  <link rel="apple-touch-icon" href="/brand.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <a class="skip" href="#view">Saltar al contenido</a>
   <div id="login" class="login hidden">
     <form class="login-card" onsubmit="doLogin(event)">
-      <div class="brand big"><img src="/icon.svg" alt=""><span>Stock Up</span></div>
+      <div class="brand big"><img src="/brand.png" alt=""><span>Stock Up</span></div>
       <p class="muted center">Control, organización y crecimiento empresarial</p>
-      <label>Usuario</label>
-      <input id="lu" autocomplete="username" required>
-      <label>Contraseña</label>
-      <input id="lp" type="password" autocomplete="current-password" required>
-      <button class="btn big" type="submit">Ingresar</button>
+      <label class="fld">Usuario<input id="lu" autocomplete="username" required></label>
+      <label class="fld">Contraseña<input id="lp" type="password" autocomplete="current-password" required></label>
+      <button class="btn big" id="login-btn" type="submit">Ingresar</button>
     </form>
   </div>
-
   <div id="app" class="app hidden">
-    <aside class="sidebar">
-      <div class="brand"><img src="/icon.svg" alt=""><span>Stock Up</span></div>
+    <aside class="sidebar" aria-label="Menú principal">
+      <div class="brand"><img src="/brand.png" alt=""><span>Stock Up</span></div>
       <nav id="menu"></nav>
-      <div class="userbox">
-        <div id="who"></div>
-        <button class="link" onclick="logout()">Cerrar sesión</button>
-      </div>
+      <div class="legend" aria-label="Leyenda de colores de inventario"><b>Colores</b><span><i class="dot ok"></i>Verde: disponible</span><span><i class="dot warn"></i>Amarillo: stock bajo</span><span><i class="dot bad"></i>Rojo: agotado</span><span><i class="dot info"></i>Azul: información</span></div>
+      <div class="userbox"><div id="who"></div><div class="tools"><button type="button" onclick="logout()">Salir</button></div></div>
     </aside>
-    <main>
-      <header class="topbar"><h1 id="title"></h1></header>
-      <section id="view"></section>
-    </main>
+    <main id="main"><header class="topbar"><h1 id="title"></h1></header><section id="view" tabindex="-1"></section></main>
   </div>
-
-  <div id="toast" class="toast hidden"></div>
+  <div id="modal-root"></div><div id="print-area" aria-hidden="true"></div><div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="/js/core.js"></script>
+  <script src="/js/v-dashboard.js"></script>
+  <script src="/js/v-pos.js"></script>
+  <script src="/js/v-sales.js"></script>
+  <script src="/js/v-products.js"></script>
+  <script src="/js/v-inventory.js"></script>
+  <script src="/js/v-cash.js"></script>
+  <script src="/js/v-admin.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
-  <link rel="apple-touch-icon" href="/icon-180.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">

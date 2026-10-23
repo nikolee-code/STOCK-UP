@@ -1,4 +1,4 @@
-import os, zlib, struct
+import os
 from functools import lru_cache
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
@@ -14,32 +14,10 @@ for m in (r_auth, r_catalog, r_sales, r_cash, r_reports):
 
 @lru_cache(maxsize=None)
 def png_icon(size):
-    """Dibuja el ícono de Stock Up (fondo verde oscuro y tres barras) como PNG."""
-    s = size / 64.0
-    bg = (15, 61, 46)
-    bars = [(14, 36, 23, 50, (255, 255, 255)), (27, 26, 36, 50, (227, 239, 233)),
-            (40, 14, 49, 50, (255, 255, 255))]
-    rows = bytearray()
-    for y in range(size):
-        rows.append(0)
-        yy = y / s
-        for x in range(size):
-            xx = x / s
-            color = bg
-            for x0, y0, x1, y1, c in bars:
-                if x0 <= xx <= x1 and y0 <= yy <= y1:
-                    color = c
-                    break
-            rows.extend(color)
-
-    def chunk(tag, data):
-        body = tag + data
-        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
-
-    ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
-            + chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + chunk(b"IEND", b""))
-
+    """Devuelve el logo oficial de la app para los accesos PWA."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "brand.png")
+    with open(path, "rb") as image:
+        return image.read()
 
 @app.get("/icon-{size}.png")
 def icon_png(size: int):
