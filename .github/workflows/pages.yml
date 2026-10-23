@@ -30,6 +30,26 @@ jobs:
           mkdir -p _site
           cp -R frontend/. _site/
           touch _site/.nojekyll
+      - name: Configure backend URL
+        env:
+          STOCKUP_API_URL: ${{ vars.STOCKUP_API_URL }}
+        run: |
+          python - <<'PY'
+          import html
+          import os
+          from pathlib import Path
+
+          api_url = (os.environ.get("STOCKUP_API_URL") or "").strip().rstrip("/")
+          if api_url and not api_url.lower().startswith("https://"):
+              raise SystemExit("STOCKUP_API_URL debe ser una URL pública HTTPS del backend.")
+          page_path = Path("_site/index.html")
+          page = page_path.read_text(encoding="utf-8")
+          marker = '<meta name="stockup-api-url" content="">'
+          replacement = f'<meta name="stockup-api-url" content="{html.escape(api_url, quote=True)}">'
+          if marker not in page:
+              raise SystemExit("No se encontró el marcador stockup-api-url en frontend/index.html.")
+          page_path.write_text(page.replace(marker, replacement, 1), encoding="utf-8")
+          PY
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:

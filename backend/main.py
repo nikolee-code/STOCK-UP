@@ -1,15 +1,30 @@
 import os
 from functools import lru_cache
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from db import Base, engine
 import r_auth, r_catalog, r_sales, r_cash, r_reports
 
+if os.getenv("APP_ENV", "").lower() in ("prod", "production") and len(os.getenv("STOCKUP_SECRET", "")) < 32:
+    raise RuntimeError("En producción configura STOCKUP_SECRET con al menos 32 caracteres aleatorios.")
+
 Base.metadata.create_all(engine)
 app = FastAPI(title="Stock Up")
+origins = [x.strip() for x in os.getenv("STOCKUP_FRONTEND_ORIGINS", "https://nikolee-code.github.io").split(",") if x.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,
+                   allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
 
 for m in (r_auth, r_catalog, r_sales, r_cash, r_reports):
     app.include_router(m.router)
+
+
+@app.get("/api/health")
+def health():
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1"))
+    return {"status": "ok"}
 
 
 @lru_cache(maxsize=None)

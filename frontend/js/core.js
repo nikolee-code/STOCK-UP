@@ -25,7 +25,8 @@ let token = localStorage.getItem("su_token"), me = null;
 let META = { units:[], decimal_units:["kg","g","lt","m"], payments:{}, expense_cats:[], motives:[], boleta_limit:700, lookup_enabled:false };
 const VIEWS = {};
 const API_SERVER = (document.querySelector('meta[name="stockup-api-url"]')?.content || "").trim().replace(/\/+$/,"");
-const STATIC_PAGES = location.hostname.endsWith(".github.io") && !API_SERVER;
+const API_SERVER_INVALID = !!API_SERVER && !/^https:\/\//i.test(API_SERVER);
+const STATIC_PAGES = location.hostname.endsWith(".github.io") && (!API_SERVER || API_SERVER_INVALID);
 const has = p => !!me && (me.perms?.includes("*") || me.perms?.includes(p));
 const hasAny = (...ps) => ps.some(has);
 
@@ -35,7 +36,7 @@ function toast(message, error=false) {
   clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.classList.add("hidden"),4000);
 }
 async function api(path, method="GET", body) {
-  if(STATIC_PAGES) throw new Error("GitHub Pages publica la interfaz, pero falta conectar el servidor de Stock Up.");
+  if(STATIC_PAGES) throw new Error(API_SERVER_INVALID ? "La dirección del servidor debe comenzar con https://." : "GitHub Pages publica la interfaz, pero falta conectar el servidor de Stock Up.");
   const response=await fetch((API_SERVER?API_SERVER+"/api":"/api")+path, { method, headers:{"Content-Type":"application/json", ...(token?{Authorization:"Bearer "+token}:{})}, body:body===undefined?undefined:JSON.stringify(body) });
   const data=await response.json().catch(()=>({}));
   if(!response.ok){ if(response.status===401 && token) logout(); throw new Error(typeof data.detail==="string"?data.detail:`Error ${response.status} en la solicitud`); }

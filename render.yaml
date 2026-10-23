@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: stockup-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bootstrap_admin.py && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: STOCKUP_SECRET
+        generateValue: true
+      - key: STOCKUP_FRONTEND_ORIGINS
+        value: https://nikolee-code.github.io
+      - key: DATABASE_URL
+        sync: false
+      - key: STOCKUP_ADMIN_USERNAME
+        sync: false
+      - key: STOCKUP_ADMIN_PASSWORD
+        sync: false
+      - key: STOCKUP_ADMIN_FULL_NAME
+        value: Administrador General
