@@ -6,21 +6,23 @@
   <title>Stock Up</title>
   <meta name="description" content="Gestión de inventario, ventas y caja">
   <meta name="theme-color" content="#0F3D2E">
-  <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="/brand.png" type="image/png">
-  <link rel="apple-touch-icon" href="/brand.png">
+  <meta name="stockup-api-url" content="">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./brand.png" type="image/png">
+  <link rel="apple-touch-icon" href="./brand.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <a class="skip" href="#view">Saltar al contenido</a>
   <div id="login" class="login hidden">
     <form class="login-card" onsubmit="doLogin(event)">
-      <div class="brand big"><img src="/brand.png" alt=""><span>Stock Up</span></div>
+      <div class="brand big"><img src="./brand.png" alt=""><span>Stock Up</span></div>
       <p class="muted center">Control, organización y crecimiento empresarial</p>
+      <div id="deployment-message" class="deployment-notice hidden" role="status">La interfaz ya está publicada. Para iniciar sesión y usar los datos, falta conectar el servidor de Stock Up.</div>
       <label class="fld">Usuario<input id="lu" autocomplete="username" required></label>
       <label class="fld">Contraseña<input id="lp" type="password" autocomplete="current-password" required></label>
       <button class="btn big" id="login-btn" type="submit">Ingresar</button>
@@ -28,7 +30,7 @@
   </div>
   <div id="app" class="app hidden">
     <aside class="sidebar" aria-label="Menú principal">
-      <div class="brand"><img src="/brand.png" alt=""><span>Stock Up</span></div>
+      <div class="brand"><img src="./brand.png" alt=""><span>Stock Up</span></div>
       <nav id="menu"></nav>
       <div class="legend" aria-label="Leyenda de colores de inventario"><b>Colores</b><span><i class="dot ok"></i>Verde: disponible</span><span><i class="dot warn"></i>Amarillo: stock bajo</span><span><i class="dot bad"></i>Rojo: agotado</span><span><i class="dot info"></i>Azul: información</span></div>
       <div class="userbox"><div id="who"></div><div class="tools"><button type="button" onclick="logout()">Salir</button></div></div>
@@ -36,14 +38,14 @@
     <main id="main"><header class="topbar"><h1 id="title"></h1></header><section id="view" tabindex="-1"></section></main>
   </div>
   <div id="modal-root"></div><div id="print-area" aria-hidden="true"></div><div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script src="/js/core.js"></script>
-  <script src="/js/v-dashboard.js"></script>
-  <script src="/js/v-pos.js"></script>
-  <script src="/js/v-sales.js"></script>
-  <script src="/js/v-products.js"></script>
-  <script src="/js/v-inventory.js"></script>
-  <script src="/js/v-cash.js"></script>
-  <script src="/js/v-admin.js"></script>
-  <script src="/app.js"></script>
+  <script src="./js/core.js"></script>
+  <script src="./js/v-dashboard.js"></script>
+  <script src="./js/v-pos.js"></script>
+  <script src="./js/v-sales.js"></script>
+  <script src="./js/v-products.js"></script>
+  <script src="./js/v-inventory.js"></script>
+  <script src="./js/v-cash.js"></script>
+  <script src="./js/v-admin.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>

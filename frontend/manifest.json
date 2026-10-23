@@ -2,11 +2,11 @@
   "name": "Stock Up",
   "short_name": "Stock Up",
   "description": "Gestión de inventario, ventas y caja",
-  "id": "/",
-  "start_url": "/",
-  "scope": "/",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#F1F3F2",
   "theme_color": "#0F3D2E",
-  "icons": [{ "src": "/brand.png", "sizes": "1280x1280", "type": "image/png", "purpose": "any maskable" }]
+  "icons": [{ "src": "./brand.png", "sizes": "1280x1280", "type": "image/png", "purpose": "any maskable" }]
 }
