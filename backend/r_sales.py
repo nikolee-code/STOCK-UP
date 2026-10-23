@@ -1,4 +1,7 @@
 from fastapi import APIRouter
+from uuid import uuid4
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from common import *
 
 router = APIRouter(prefix="/api")
@@ -21,6 +24,55 @@ class SaleIn(BaseModel):
     customer_doc: str = ""
     customer_name: str = ""
     customer_address: str = ""
+    idempotency_key: str = ""
+
+
+def reserve_sale_request(d, u, db):
+    key=(d.idempotency_key or "").strip() or uuid4().hex
+    if len(key)<16 or len(key)>64 or not all(ch.isalnum() or ch in "-_" for ch in key):
+        raise HTTPException(400, "Clave de reintento no válida")
+    d.idempotency_key=key
+    dialect=db.bind.dialect.name
+    values={"request_id":key,"user_id":u.id,"sale_id":None}
+    if dialect=="postgresql":
+        db.execute(pg_insert(SaleRequest).values(**values).on_conflict_do_nothing(index_elements=[SaleRequest.request_id]))
+    elif dialect=="sqlite":
+        db.execute(sqlite_insert(SaleRequest).values(**values).on_conflict_do_nothing(index_elements=[SaleRequest.request_id]))
+    request=db.query(SaleRequest).filter_by(request_id=key).with_for_update().first()
+    if request is None:
+        request=SaleRequest(**values);db.add(request);db.flush()
+    if request.user_id!=u.id:
+        raise HTTPException(409, "La clave de venta ya pertenece a otra sesión")
+    if request.sale_id:
+        sale=db.get(Sale,request.sale_id)
+        if not sale:raise HTTPException(409, "No se pudo recuperar la venta asociada al reintento")
+        items=db.query(SaleItem).filter(SaleItem.sale_id==sale.id).order_by(SaleItem.id).all()
+        cashier=db.get(User,sale.user_id)
+        log(db,u,"VENTA_REINTENTO",f"Se devolvió el comprobante existente {doc_label(sale)}")
+        db.commit()
+        return request,receipt_out(sale,items,cashier.full_name if cashier else "")
+    return request,None
+
+
+def next_doc_number(db, series):
+    """Reserva un correlativo transaccional; SELECT FOR UPDATE serializa cajeros concurrentes."""
+    last = db.query(func.max(Sale.doc_number)).filter(Sale.doc_series == series).scalar() or 0
+    first_number = int(last) + 1
+    dialect = db.bind.dialect.name
+    if dialect == "postgresql":
+        stmt = pg_insert(DocumentCounter).values(series=series, next_number=first_number).on_conflict_do_nothing(index_elements=[DocumentCounter.series])
+        db.execute(stmt)
+    elif dialect == "sqlite":
+        stmt = sqlite_insert(DocumentCounter).values(series=series, next_number=first_number).on_conflict_do_nothing(index_elements=[DocumentCounter.series])
+        db.execute(stmt)
+    counter = db.query(DocumentCounter).filter_by(series=series).with_for_update().first()
+    if counter is None:
+        counter = DocumentCounter(series=series, next_number=first_number)
+        db.add(counter)
+        db.flush()
+    number = max(int(counter.next_number or 1), first_number)
+    counter.next_number = number + 1
+    return number
 
 
 def check_customer(d, total):
@@ -49,6 +101,9 @@ def check_customer(d, total):
 def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
     if u.role != "cajero":
         raise HTTPException(403, "El registro de ventas está habilitado solo para el rol Cajero")
+    sale_request, prior_receipt = reserve_sale_request(d,u,db)
+    if prior_receipt is not None:
+        return prior_receipt
     if not d.items:
         raise HTTPException(400, "La venta no tiene productos")
     if d.payment_method not in PAYMENTS:
@@ -61,9 +116,16 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
     if not cs:
         raise HTTPException(400, "Debes abrir tu caja antes de vender")
 
+    # Bloquea todos los productos en orden estable para que varios cajeros no vendan el mismo stock.
+    product_ids = sorted({it.product_id for it in d.items})
+    product_query = db.query(Product).filter(Product.id.in_(product_ids)).order_by(Product.id)
+    if db.bind.dialect.name in ("postgresql", "mysql"):
+        product_query = product_query.with_for_update()
+    locked_products = {p.id: p for p in product_query.all()}
+
     lines, need_units, subtotal = [], {}, 0.0
     for it in d.items:
-        p = db.get(Product, it.product_id)
+        p = locked_products.get(it.product_id)
         if not p or not p.active or it.qty <= 0:
             raise HTTPException(400, "Producto o cantidad no válidos")
         pr = None
@@ -92,15 +154,16 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
     cust_type, cust_doc, cust_name, cust_addr = check_customer(d, total)
 
     series = SERIES[d.doc_type]
-    last = db.query(func.max(Sale.doc_number)).filter(Sale.doc_series == series).scalar() or 0
+    doc_number = next_doc_number(db, series)
     sale = Sale(user_id=u.id, cash_session_id=cs.id, payment_method=d.payment_method,
                 payment_ref=d.payment_ref.strip()[:60], doc_type=d.doc_type,
-                doc_series=series, doc_number=last + 1, subtotal=subtotal, discount=discount,
+                doc_series=series, doc_number=doc_number, subtotal=subtotal, discount=discount,
                 promo_id=None, promo_name=None,
                 total=total, customer_doc_type=cust_type, customer_doc=cust_doc,
                 customer_name=cust_name, customer_address=cust_addr)
     db.add(sale)
     db.flush()
+    sale_request.sale_id=sale.id
     number = f"{series}-{sale.doc_number:08d}"
     sale_items = []
     for p, pr, qty, price, factor, units, label, line_total in lines:
@@ -120,7 +183,7 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
 
 @router.get("/sales")
 def list_sales(date_from: Optional[str] = None, date_to: Optional[str] = None,
-               user_id: Optional[int] = None, status: Optional[str] = None,
+               user_id: Optional[int] = None, status: Optional[str] = None, doc_type: Optional[str] = None,
                u=Depends(need_any("sales.read", "sales.own")), db=Depends(get_db)):
     a, b = day_range(date_from, date_to)
     conds = [Sale.created_at >= a, Sale.created_at < b]
@@ -133,6 +196,8 @@ def list_sales(date_from: Optional[str] = None, date_to: Optional[str] = None,
     q = db.query(Sale, User).join(User, User.id == Sale.user_id).filter(*conds)
     if status in ("completada", "anulada"):
         q = q.filter(Sale.status == status)
+    if doc_type in SERIES:
+        q = q.filter(Sale.doc_type == doc_type)
     rows = q.order_by(Sale.id.desc()).limit(500).all()
 
     done = [Sale.status == "completada"] + conds

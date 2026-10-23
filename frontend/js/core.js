@@ -37,11 +37,25 @@ function toast(message, error=false) {
 }
 async function api(path, method="GET", body) {
   if(STATIC_PAGES) throw new Error(API_SERVER_INVALID ? "La dirección del servidor debe comenzar con https://." : "GitHub Pages publica la interfaz, pero falta conectar el servidor de Stock Up.");
-  const response=await fetch((API_SERVER?API_SERVER+"/api":"/api")+path, { method, headers:{"Content-Type":"application/json", ...(token?{Authorization:"Bearer "+token}:{})}, body:body===undefined?undefined:JSON.stringify(body) });
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);
+  let response;
+  try {
+    response=await fetch((API_SERVER?API_SERVER+"/api":"/api")+path,{method,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});
+  } catch(error) {
+    if(error.name==="AbortError") throw new Error("La solicitud tardó demasiado. Revisa la conexión e inténtalo de nuevo.");
+    throw new Error("No se pudo conectar con Stock Up. Comprueba internet y vuelve a intentar; los datos del formulario siguen aquí.");
+  } finally { clearTimeout(timeout); }
   const data=await response.json().catch(()=>({}));
-  if(!response.ok){ if(response.status===401 && token) logout(); throw new Error(typeof data.detail==="string"?data.detail:`Error ${response.status} en la solicitud`); }
+  if(!response.ok){if(response.status===401&&token)logout();throw new Error(typeof data.detail==="string"?data.detail:`Error ${response.status} en la solicitud`);}
   return data;
 }
+function downloadCsv(filename, columns, rows) {
+  const quote=value=>"\""+String(value??"").replace(/\"/g, "\"\"")+"\"";
+  const content=String.fromCharCode(0xFEFF)+[columns.map(x=>quote(x.label)).join(";"),...rows.map(row=>columns.map(x=>quote(typeof x.value==="function"?x.value(row):row[x.value])).join(";"))].join("\r\n");
+  const url=URL.createObjectURL(new Blob([content],{type:"text/csv;charset=utf-8"}));
+  const a=document.createElement("a");a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);
+}
+
 function fld(label, inner, hint="") { return `<label class="fld">${esc(label)}${inner}${hint?`<small class="muted">${esc(hint)}</small>`:""}</label>`; }
 function opts(items, selected="") { return items.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(selected)?"selected":""}>${esc(t)}</option>`).join(""); }
 function badge(text, kind="soft") { return `<span class="badge ${esc(kind)}">${esc(text)}</span>`; }
@@ -94,7 +108,7 @@ function printTickets(rows) { const w=window.open("","_blank","width=480,height=
 async function printSales(ids) { const w=window.open("","_blank","width=480,height=720");if(!w)return toast("Permite las ventanas emergentes para imprimir",true);w.document.write("Cargando comprobantes…");try{const rows=await Promise.all(ids.map(id=>api(`/sales/${id}`)));w.document.open();w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprobantes Stock Up</title><style>body{font:12px Arial}.receipt{width:76mm;margin:0 auto 10mm;page-break-after:always}.receipt:last-child{page-break-after:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:3px;border-bottom:1px solid #ccc}.r-head{text-align:center}.r-tot{display:flex;justify-content:space-between}.big{font-weight:bold}</style></head><body>${rows.map(ticketHtml).join("")}<script>onload=()=>print()<\/script></body></html>`);w.document.close();}catch(e){w.close();toast(e.message,true);} }
 function showReceipt(r,label="",after) { modal({title:label||"Venta registrada",html:ticketHtml(r),noButtons:true});const m=$("#modal-root");const foot=document.createElement("div");foot.className="r-actions noprint";foot.innerHTML='<button class="btn ghost" type="button">Imprimir</button><button class="btn" type="button">Nueva venta</button>';m.querySelector(".modal-body").append(foot);foot.children[0].onclick=()=>printTickets([r]);foot.children[1].onclick=()=>{closeModal();after?.();}; }
 function payLabel(value) { return META.payments?.[value]||value||"—"; }
-function MENU() { return [ {id:"dashboard",label:"Inicio",perm:"dashboard"},{id:"pos",label:"Ventas",perm:"sales.create",role:"cajero"},{id:"products",label:"Productos e Inventario",perm:"products.read"},{id:"cashreview",label:"Historial de cierres de caja",perm:"cash.review"},{id:"users",label:"Usuarios y permisos",perm:"users.manage"},{id:"expenses",label:"Egresos",perm:"expenses.create",any:["expenses.read","expenses.create"]},{id:"cash",label:"Mi caja",perm:"cash.own"},{id:"audit",label:"Auditoría",perm:"audit.read"},{id:"settings",label:"Configuración",perm:"settings.manage"},{id:"account",label:"Mi cuenta",public:true} ]; }
+function MENU() { return [ {id:"dashboard",label:"Inicio",perm:"dashboard"},{id:"backup",label:"Copias de seguridad",perm:"users.manage"},{id:"pos",label:"Ventas",perm:"sales.create",role:"cajero"},{id:"products",label:"Productos e Inventario",perm:"products.read"},{id:"cashreview",label:"Historial de cierres de caja",perm:"cash.review"},{id:"users",label:"Usuarios y permisos",perm:"users.manage"},{id:"expenses",label:"Egresos",perm:"expenses.create",any:["expenses.read","expenses.create"]},{id:"cash",label:"Mi caja",perm:"cash.own"},{id:"audit",label:"Auditoría",perm:"audit.read"},{id:"settings",label:"Configuración",perm:"settings.manage"},{id:"account",label:"Mi cuenta",public:true} ]; }
 
 /* Mostrar u ocultar contraseña en el inicio y en los formularios futuros. */
 const EYE_OPEN='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>';

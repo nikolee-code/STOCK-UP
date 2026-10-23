@@ -52,7 +52,7 @@ class PwdIn(BaseModel):
 
 
 @router.post("/me/password")
-def change_password(d: PwdIn, u=Depends(need("users.manage")), db=Depends(get_db)):
+def change_password(d: PwdIn, u=Depends(current_user), db=Depends(get_db)):
     if not verify_password(d.current_password, u.password_hash):
         raise HTTPException(400, "La contraseña actual no es correcta")
     if len(d.new_password) < 8:
@@ -92,6 +92,25 @@ class UserIn(BaseModel):
 
 class ActiveIn(BaseModel):
     active: bool
+
+
+@router.get("/backup")
+def download_backup(u=Depends(need("users.manage")), db=Depends(get_db)):
+    """Exportación manual. Incluye hashes de contraseñas; debe guardarse en un lugar privado."""
+    from datetime import date
+    models = [User, Product, Presentation, StockMovement, CashSession, Promotion, Sale, SaleItem, Expense, Setting, DocumentCounter, SaleRequest, AuditLog]
+    tables = {}
+    for model in models:
+        rows = db.query(model).all()
+        tables[model.__tablename__] = [
+            {column.name: (value.isoformat() if isinstance(value, (datetime, date)) else value)
+             for column in model.__table__.columns
+             for value in [getattr(row, column.name)]}
+            for row in rows
+        ]
+    log(db, u, "RESPALDO_DESCARGADO", "Exportación manual de datos")
+    db.commit()
+    return {"format": "stock-up-backup", "version": 1, "generated_at": datetime.utcnow().isoformat() + "Z", "tables": tables}
 
 
 @router.get("/users")

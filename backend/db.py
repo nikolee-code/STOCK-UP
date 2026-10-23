@@ -142,6 +142,15 @@ class Sale(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class SaleRequest(Base):
+    """Clave idempotente del cliente para no duplicar ventas al reintentar una solicitud."""
+    __tablename__ = "sale_requests"
+    request_id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class SaleItem(Base):
     __tablename__ = "sale_items"
     id = Column(Integer, primary_key=True)
@@ -173,6 +182,13 @@ class Setting(Base):
     __tablename__ = "settings"
     key = Column(String(50), primary_key=True)
     value = Column(String(200))
+
+
+class DocumentCounter(Base):
+    """Contador atómico por serie para evitar números duplicados con varios cajeros."""
+    __tablename__ = "document_counters"
+    series = Column(String(10), primary_key=True)
+    next_number = Column(Integer, nullable=False, default=1)
 
 
 class AuditLog(Base):

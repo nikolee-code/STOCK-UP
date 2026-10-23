@@ -154,3 +154,23 @@ label{font-size:13px;font-weight:600;color:var(--g800);margin-top:4px;display:bl
 .product-grid{max-height:none;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));align-items:stretch}.product-card{margin:0;display:flex;flex-direction:column;gap:8px;min-width:0}.product-card .row-between{align-items:flex-start}.product-card .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto}.product-image{height:150px;border-radius:10px;display:grid;place-items:center;overflow:hidden;font:700 48px 'Playfair Display',serif}.product-image img{width:100%;height:100%;object-fit:cover}.product-image span{color:inherit}.category-tag{display:inline-block;padding:4px 9px;border-radius:20px;font-size:12px;font-weight:600}.product-card p{overflow-wrap:anywhere}.pres-row{padding:12px;background:var(--gray50);border-radius:10px;margin:8px 0}.photo-upload{margin:14px 0}.photo-preview{display:block;width:150px;height:150px;object-fit:cover;border-radius:10px}.inventory-product{display:flex;align-items:center;gap:10px}.inventory-product img{width:44px;height:44px;object-fit:cover;border-radius:8px}.inventory-product small{display:block;color:var(--gray500)}.qty-in{color:var(--g700);font-weight:700}.qty-out{color:var(--alert);font-weight:700}.narrow{max-width:600px}.inline-filter{display:flex;align-items:center;gap:8px;white-space:nowrap}.inline-filter select{min-width:150px}
 .receipt-logo{display:block;width:64px;height:64px;object-fit:cover;border-radius:14px;margin:0 auto 6px}.sidebar .brand img{object-fit:cover;border-radius:8px}.login-card .brand img{object-fit:cover;border-radius:10px}
 .deployment-notice{border:1px solid #E8C86A;background:#FFF6D8;color:#725300;padding:12px;border-radius:10px;line-height:1.5;font-size:13px}
+
+/* Ajustes de lectura para el menú en pantallas pequeñas. */
+@media(max-width:860px){
+  body{overflow-x:hidden}
+  .sidebar{position:relative;height:auto;max-height:none;overflow:visible;padding:12px}
+  nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;overflow:visible;min-width:0;width:100%}
+  nav button{white-space:normal;overflow-wrap:anywhere;min-height:44px;padding:10px 9px;font-size:14px}
+  .legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .legend b{grid-column:1/-1}
+  .userbox{min-width:0}
+  .row-between>.actions{display:flex;flex-wrap:wrap}
+}
+@media(max-width:480px){
+  .login-card{padding:24px 18px}
+  main{padding:14px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .kpi{padding:13px}
+  .kpi b{font-size:24px}
+  .card{padding:14px}
+}

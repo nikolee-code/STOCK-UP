@@ -15,3 +15,6 @@ __pycache__/
 
 # Configuración personal de VS Code
 .vscode/
+
+# Copias locales del proyecto (no publicar)
+_backups/

@@ -135,8 +135,12 @@ def day_start_utc(s):
 
 def day_range(date_from, date_to):
     """Devuelve (inicio, fin) en UTC. Sin fechas = hoy. Solo 'desde' = ese día."""
-    a = day_start_utc(date_from or today_str())
-    b = day_start_utc(date_to or date_from or today_str()) + timedelta(days=1)
+    start = date_from or today_str()
+    end = date_to or date_from or today_str()
+    if start > end:
+        raise HTTPException(400, "La fecha inicial no puede ser posterior a la fecha final")
+    a = day_start_utc(start)
+    b = day_start_utc(end) + timedelta(days=1)
     return a, b
 
 
