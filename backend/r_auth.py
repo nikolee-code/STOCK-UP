@@ -12,10 +12,12 @@ def meta(db=Depends(get_db)):
         "decimal_units": sorted(DECIMAL_UNITS),
         "payments": PAYMENTS,
         "boleta_limit": BOLETA_LIMIT,
+        "electronic_invoicing_enabled": CPE_ENABLED,
         "expense_cats": EXPENSE_CATS,
         "motives": [{"code": k, "label": v[0], "dir": v[1]} for k, v in MOTIVES.items()],
         "blind_close": get_setting(db, "blind_close", "1") == "1",
         "lookup_enabled": bool(PERU_API_TOKEN),
+        "lookup_provider": PERU_API_PROVIDER,
     }
 
 
@@ -165,15 +167,9 @@ def lookup_dni(dni: str, u=Depends(need("sales.create"))):
     if not (dni.isdigit() and len(dni) == 8):
         raise HTTPException(400, "El DNI debe tener 8 dígitos")
     if not PERU_API_TOKEN:
-        raise HTTPException(503, "La consulta automática no está configurada. Escribe el nombre a mano.")
-    if PERU_API_PROVIDER == "apiperu":
-        r = http_json("https://apiperu.dev/api/dni", {"dni": dni})
-        x = r.get("data") or {}
-        name = x.get("nombre_completo") or " ".join(
-            v for v in [x.get("nombres"), x.get("apellido_paterno"), x.get("apellido_materno")] if v)
-    else:
-        r = http_json(f"https://api.apis.net.pe/v2/reniec/dni?numero={dni}")
-        name = " ".join(v for v in [r.get("nombres"), r.get("apellidoPaterno"), r.get("apellidoMaterno")] if v)
+        raise HTTPException(503, "La consulta automática de APISPERU no está configurada. Un administrador debe guardar PERU_API_TOKEN en Render.")
+    r = http_json(f"https://dniruc.apisperu.com/api/v1/dni/{dni}")
+    name = " ".join(v for v in [r.get("nombres"), r.get("apellidoPaterno"), r.get("apellidoMaterno")] if v)
     name = (name or "").strip()
     if not name:
         raise HTTPException(404, "No se encontró ese DNI")
@@ -186,19 +182,12 @@ def lookup_ruc(ruc: str, u=Depends(need("sales.create"))):
     if not (ruc.isdigit() and len(ruc) == 11):
         raise HTTPException(400, "El RUC debe tener 11 dígitos")
     if not PERU_API_TOKEN:
-        raise HTTPException(503, "La consulta automática no está configurada. Escribe los datos a mano.")
-    if PERU_API_PROVIDER == "apiperu":
-        r = http_json("https://apiperu.dev/api/ruc", {"ruc": ruc})
-        x = r.get("data") or {}
-        name = x.get("nombre_o_razon_social")
-        address = x.get("direccion_completa") or x.get("direccion")
-        status, cond = x.get("estado"), x.get("condicion")
-    else:
-        r = http_json(f"https://api.apis.net.pe/v2/sunat/ruc?numero={ruc}")
-        name = r.get("razonSocial")
-        address = " ".join(v for v in [r.get("direccion"), r.get("distrito"), r.get("provincia"),
-                                       r.get("departamento")] if v)
-        status, cond = r.get("estado"), r.get("condicion")
+        raise HTTPException(503, "La consulta automática de APISPERU no está configurada. Un administrador debe guardar PERU_API_TOKEN en Render.")
+    r = http_json(f"https://dniruc.apisperu.com/api/v1/ruc/{ruc}")
+    name = r.get("razonSocial")
+    address = " ".join(v for v in [r.get("direccion"), r.get("distrito"), r.get("provincia"),
+                                   r.get("departamento")] if v)
+    status, cond = r.get("estado"), r.get("condicion")
     if not name:
         raise HTTPException(404, "No se encontró ese RUC")
     return {"ruc": ruc, "name": name.strip(), "address": (address or "").strip(),

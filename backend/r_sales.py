@@ -21,7 +21,6 @@ class SaleIn(BaseModel):
     customer_doc: str = ""
     customer_name: str = ""
     customer_address: str = ""
-    promo_id: Optional[int] = None
 
 
 def check_customer(d, total):
@@ -29,6 +28,8 @@ def check_customer(d, total):
     doc = d.customer_doc.strip()
     name = d.customer_name.strip()
     addr = d.customer_address.strip()
+    if d.doc_type == "nota_interna" and total > 5:
+        raise HTTPException(400, "Para ventas mayores a S/ 5.00 debes emitir boleta o factura; la nota interna no es un comprobante de pago.")
     if d.doc_type == "factura":
         if not (doc.isdigit() and len(doc) == 11 and doc[:2] in ("10", "15", "16", "17", "20")):
             raise HTTPException(400, "Para factura se requiere un RUC válido de 11 dígitos (empieza con 10, 15, 16, 17 o 20)")
@@ -46,12 +47,16 @@ def check_customer(d, total):
 
 @router.post("/sales")
 def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
+    if u.role != "cajero":
+        raise HTTPException(403, "El registro de ventas está habilitado solo para el rol Cajero")
     if not d.items:
         raise HTTPException(400, "La venta no tiene productos")
     if d.payment_method not in PAYMENTS:
         raise HTTPException(400, "Forma de pago no válida")
     if d.doc_type not in SERIES:
         raise HTTPException(400, "Tipo de comprobante no válido")
+    if d.doc_type in ("boleta", "factura") and not CPE_ENABLED:
+        raise HTTPException(503, "La emisión electrónica aún no está conectada con SUNAT. No se registró la venta; configura el sistema de emisión y vuelve a intentarlo.")
     cs = db.query(CashSession).filter_by(user_id=u.id, status="abierta").first()
     if not cs:
         raise HTTPException(400, "Debes abrir tu caja antes de vender")
@@ -81,26 +86,8 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
         lines.append((p, pr, it.qty, price, factor, units, label, line_total))
     subtotal = round(subtotal, 2)
 
-    # Promoción o descuento (lo define el administrador; el cajero solo lo elige)
-    promo, discount = None, 0.0
-    if d.promo_id:
-        promo = db.get(Promotion, d.promo_id)
-        if not promo or not promo.active:
-            raise HTTPException(400, "La promoción no existe o está desactivada")
-        t = today_str()
-        if (promo.starts and promo.starts > t) or (promo.ends and promo.ends < t):
-            raise HTTPException(400, "La promoción no está vigente")
-        if subtotal < (promo.min_total or 0):
-            raise HTTPException(400, f"Esta promoción pide una compra mínima de S/ {promo.min_total:.2f}")
-        if promo.scope == "product":
-            base = sum(ln[7] for ln in lines if ln[0].id == promo.product_id)
-            if base <= 0:
-                raise HTTPException(400, "La promoción no aplica a los productos de esta venta")
-        else:
-            base = subtotal
-        discount = round(base * promo.value / 100, 2) if promo.kind == "percent" else round(promo.value, 2)
-        discount = min(discount, subtotal)
-    total = round(subtotal - discount, 2)
+    discount = 0.0
+    total = subtotal
 
     cust_type, cust_doc, cust_name, cust_addr = check_customer(d, total)
 
@@ -109,7 +96,7 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
     sale = Sale(user_id=u.id, cash_session_id=cs.id, payment_method=d.payment_method,
                 payment_ref=d.payment_ref.strip()[:60], doc_type=d.doc_type,
                 doc_series=series, doc_number=last + 1, subtotal=subtotal, discount=discount,
-                promo_id=promo.id if promo else None, promo_name=promo.name if promo else None,
+                promo_id=None, promo_name=None,
                 total=total, customer_doc_type=cust_type, customer_doc=cust_doc,
                 customer_name=cust_name, customer_address=cust_addr)
     db.add(sale)
@@ -126,8 +113,7 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
         sale_items.append(si)
         db.add(StockMovement(product_id=p.id, kind="venta", qty=-units, prev_stock=prev,
                              new_stock=p.stock, reason=f"Venta {number}", user_id=u.id))
-    log(db, u, "VENTA", f"{number} por S/ {total:.2f} ({PAYMENTS[d.payment_method]})"
-        + (f" con promoción «{promo.name}»" if promo else ""))
+    log(db, u, "VENTA", f"{number} por S/ {total:.2f} ({PAYMENTS[d.payment_method]})")
     db.commit()  # todo o nada: si algo falla, no se guarda nada
     return receipt_out(sale, sale_items, u.full_name)
 

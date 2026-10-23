@@ -9,7 +9,7 @@ from db import *
 
 SECRET = os.getenv("STOCKUP_SECRET", "cambia-esta-clave-en-produccion")
 PERU_API_TOKEN = os.getenv("PERU_API_TOKEN", "")            # token del servicio de consulta DNI/RUC
-PERU_API_PROVIDER = os.getenv("PERU_API_PROVIDER", "apisnetpe").lower()
+PERU_API_PROVIDER = os.getenv("PERU_API_PROVIDER", "apisperu").lower()
 
 # ---------- RBAC: permisos por rol ----------
 PERMS = {
@@ -34,7 +34,8 @@ PAYMENTS = {
 }
 SERIES = {"boleta": "B001", "factura": "F001", "nota_interna": "NV01"}
 DOC_NAMES = {"boleta": "Boleta de venta electrónica", "factura": "Factura electrónica", "nota_interna": "Nota de venta interna"}
-BOLETA_LIMIT = 700.0   # desde este monto la boleta exige datos del cliente (confirmar con tu contador)
+BOLETA_LIMIT = 700.0   # SUNAT exige identificar al adquirente si la boleta supera S/ 700.00
+CPE_ENABLED = False    # No se habilita hasta integrar y validar un emisor electrónico autorizado.
 IGV = 1.18             # se asume que los precios ya incluyen IGV (18%)
 EXPENSE_CATS = ["Proveedores", "Servicios", "Sueldos", "Transporte", "Mantenimiento", "Otros"]
 

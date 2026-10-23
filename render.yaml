@@ -22,3 +22,7 @@ services:
         sync: false
       - key: STOCKUP_ADMIN_FULL_NAME
         value: Administrador General
+      - key: PERU_API_PROVIDER
+        value: apisperu
+      - key: PERU_API_TOKEN
+        sync: false
