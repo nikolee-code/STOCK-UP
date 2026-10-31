@@ -178,6 +178,70 @@ class Expense(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class CashIncome(Base):
+    __tablename__ = "cash_incomes"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False)
+    concept = Column(String(150), nullable=False)
+    amount = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Supplier(Base):
+    __tablename__ = "suppliers"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(150), nullable=False)
+    tax_id = Column(String(20), default="")
+    phone = Column(String(40), default="")
+    email = Column(String(120), default="")
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Purchase(Base):
+    __tablename__ = "purchases"
+    id = Column(Integer, primary_key=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
+    invoice_no = Column(String(80), nullable=False)
+    total = Column(Float, nullable=False)
+    paid = Column(Float, default=0)
+    note = Column(String(200), default="")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PurchaseItem(Base):
+    __tablename__ = "purchase_items"
+    id = Column(Integer, primary_key=True)
+    purchase_id = Column(Integer, ForeignKey("purchases.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    qty = Column(Float, nullable=False)
+    unit_cost = Column(Float, nullable=False)
+
+
+class PurchasePayment(Base):
+    __tablename__ = "purchase_payments"
+    id = Column(Integer, primary_key=True)
+    purchase_id = Column(Integer, ForeignKey("purchases.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    note = Column(String(160), default="")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DiscountApproval(Base):
+    __tablename__ = "discount_approvals"
+    id = Column(Integer, primary_key=True)
+    token_id = Column(String(64), unique=True, nullable=False)
+    cashier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    supervisor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Setting(Base):
     __tablename__ = "settings"
     key = Column(String(50), primary_key=True)

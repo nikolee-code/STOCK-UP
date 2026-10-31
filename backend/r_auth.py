@@ -98,7 +98,7 @@ class ActiveIn(BaseModel):
 def download_backup(u=Depends(need("users.manage")), db=Depends(get_db)):
     """Exportación manual. Incluye hashes de contraseñas; debe guardarse en un lugar privado."""
     from datetime import date
-    models = [User, Product, Presentation, StockMovement, CashSession, Promotion, Sale, SaleItem, Expense, Setting, DocumentCounter, SaleRequest, AuditLog]
+    models = [User, Product, Presentation, StockMovement, CashSession, CashIncome, Promotion, Sale, SaleItem, Expense, Supplier, Purchase, PurchaseItem, PurchasePayment, DiscountApproval, Setting, DocumentCounter, SaleRequest, AuditLog]
     tables = {}
     for model in models:
         rows = db.query(model).all()

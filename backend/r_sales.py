@@ -25,6 +25,8 @@ class SaleIn(BaseModel):
     customer_name: str = ""
     customer_address: str = ""
     idempotency_key: str = ""
+    discount_amount: float = 0
+    authorization_id: str = ""
 
 
 def reserve_sale_request(d, u, db):
@@ -148,8 +150,16 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
         lines.append((p, pr, it.qty, price, factor, units, label, line_total))
     subtotal = round(subtotal, 2)
 
-    discount = 0.0
-    total = subtotal
+    discount = round(float(d.discount_amount or 0), 2)
+    if discount < 0 or discount >= subtotal:
+        raise HTTPException(400, "El descuento debe ser menor al subtotal")
+    approval = None
+    if discount > 0:
+        approval = db.query(DiscountApproval).filter_by(token_id=d.authorization_id, cashier_id=u.id).with_for_update().first()
+        if (not approval or approval.sale_id or approval.expires_at < datetime.utcnow()
+                or abs(approval.amount - discount) > 0.009):
+            raise HTTPException(403, "Solicita una autorización vigente al supervisor para ese monto de descuento")
+    total = round(subtotal - discount, 2)
 
     cust_type, cust_doc, cust_name, cust_addr = check_customer(d, total)
 
@@ -158,12 +168,15 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
     sale = Sale(user_id=u.id, cash_session_id=cs.id, payment_method=d.payment_method,
                 payment_ref=d.payment_ref.strip()[:60], doc_type=d.doc_type,
                 doc_series=series, doc_number=doc_number, subtotal=subtotal, discount=discount,
-                promo_id=None, promo_name=None,
+                promo_id=None, promo_name="Autorizado por supervisor" if approval else None,
                 total=total, customer_doc_type=cust_type, customer_doc=cust_doc,
                 customer_name=cust_name, customer_address=cust_addr)
     db.add(sale)
     db.flush()
     sale_request.sale_id=sale.id
+    if approval:
+        approval.sale_id = sale.id
+        log(db, db.get(User, approval.supervisor_id), "DESCUENTO_APLICADO", f"{doc_label(sale)} · S/ {discount:.2f}")
     number = f"{series}-{sale.doc_number:08d}"
     sale_items = []
     for p, pr, qty, price, factor, units, label, line_total in lines:
@@ -289,14 +302,14 @@ class ExpenseIn(BaseModel):
 
 
 @router.post("/expenses")
-def add_expense(d: ExpenseIn, u=Depends(need("expenses.create")), db=Depends(get_db)):
+def add_expense(d: ExpenseIn, u=Depends(need_any("expenses.create", "expenses.manage")), db=Depends(get_db)):
     concept = d.concept.strip()
     if len(concept) < 3:
         raise HTTPException(400, "Escribe el concepto del egreso")
     if d.amount <= 0:
         raise HTTPException(400, "El monto debe ser mayor que 0")
     cat = d.category if d.category in EXPENSE_CATS else "Otros"
-    from_cash = True if not is_admin(u) else d.from_cash  # el cajero solo registra salidas de su caja
+    from_cash = True if not (is_admin(u) or allowed(u, "expenses.manage")) else d.from_cash  # el cajero solo registra salidas de su caja
     cs_id = None
     if from_cash:
         cs = db.query(CashSession).filter_by(user_id=u.id, status="abierta").first()

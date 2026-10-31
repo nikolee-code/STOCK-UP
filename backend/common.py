@@ -15,9 +15,10 @@ PERU_API_PROVIDER = os.getenv("PERU_API_PROVIDER", "apisperu").lower()
 PERMS = {
     "admin": ["*"],
     "almacen": ["dashboard", "products.read", "products.write", "costs.read", "stock.read", "stock.adjust"],
-    "cajero": ["dashboard", "products.read", "sales.create", "sales.own", "cash.own", "expenses.create"],
-    "supervisor": ["dashboard", "products.read", "sales.read", "cash.review", "audit.read",
-                   "profit.read", "expenses.read", "stock.read"],
+    "cajero": ["dashboard", "products.read", "sales.create", "sales.own", "cash.own", "expenses.create", "notifications.read"],
+    "supervisor": ["dashboard", "products.read", "products.write", "sales.read", "cash.review", "audit.read",
+                   "profit.read", "expenses.read", "expenses.manage", "stock.read", "finance.read",
+                   "purchases.manage", "purchases.read", "notifications.read", "discount.approve"],
     "contador": ["dashboard", "products.read", "sales.read", "costs.read", "profit.read", "expenses.read"],
 }
 
@@ -165,7 +166,8 @@ def pres_map(db):
 def product_out(p, u, pm):
     d = {"id": p.id, "code": p.code, "barcode": p.barcode, "name": p.name, "category": p.category,
          "unit": p.unit, "decimal": p.unit in DECIMAL_UNITS, "price": p.price,
-         "stock": p.stock, "min_stock": p.min_stock, "presentations": pm.get(p.id, [])}
+         "stock": p.stock, "min_stock": p.min_stock,
+         "presentations": [{**x, "available": int(p.stock // x["factor"])} for x in pm.get(p.id, [])]}
     if allowed(u, "costs.read"):
         d["cost"] = p.cost  # los costos solo los ve quien tiene permiso
     return d
@@ -176,6 +178,11 @@ def by_method(db, session_id):
         .filter(Sale.cash_session_id == session_id, Sale.status == "completada") \
         .group_by(Sale.payment_method).all()
     return [{"method": m, "label": PAYMENTS.get(m, m), "total": round(t or 0, 2), "count": c} for m, t, c in rows]
+
+
+def cash_income_total(db, session_id):
+    t = db.query(func.sum(CashIncome.amount)).filter(CashIncome.cash_session_id == session_id).scalar()
+    return round(t or 0, 2)
 
 
 def cash_expenses_total(db, session_id):

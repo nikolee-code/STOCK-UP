@@ -24,6 +24,7 @@ class ProductIn(BaseModel):
     cost: float = 0
     price: float
     min_stock: float = 5
+    initial_stock: float = 0
     presentations: list[PresIn] = []
 
 
@@ -45,7 +46,7 @@ def clean_product(d, db, pid=None):
         raise HTTPException(400, "El nombre es obligatorio")
     if d.unit not in UNITS:
         raise HTTPException(400, "Unidad de medida no válida")
-    if d.price < 0 or d.cost < 0 or d.min_stock < 0:
+    if d.price < 0 or d.cost < 0 or d.min_stock < 0 or d.initial_stock < 0:
         raise HTTPException(400, "Los valores no pueden ser negativos")
     if d.unit not in DECIMAL_UNITS and d.min_stock != int(d.min_stock):
         raise HTTPException(400, "El stock mínimo debe ser un número entero para esta unidad")
@@ -88,15 +89,20 @@ def add_product(d: ProductIn, u=Depends(need("products.write")), db=Depends(get_
             code = f"P{n:03d}"
     elif db.query(Product).filter(Product.code == code).first():
         raise HTTPException(400, "Ya existe un producto con ese código interno")
+    if d.unit not in DECIMAL_UNITS and (d.min_stock != int(d.min_stock) or d.initial_stock != int(d.initial_stock)):
+        raise HTTPException(400, "El stock debe ser entero para esta unidad")
     p = Product(code=code, barcode=barcode, name=name, category=d.category.strip() or "General",
                 unit=d.unit, cost=d.cost if allowed(u, "costs.read") else 0, price=d.price,
-                min_stock=r3(d.min_stock), stock=0)
+                min_stock=r3(d.min_stock), stock=r3(d.initial_stock))
     db.add(p)
     db.flush()
     for x in d.presentations:
         db.add(Presentation(product_id=p.id, name=x.name.strip(), factor=x.factor, price=x.price,
                             barcode=x.barcode.strip() or None))
-    log(db, u, "PRODUCTO_CREADO", f"{code} - {name} ({d.unit}), {len(d.presentations)} presentación(es)")
+    if p.stock > 0:
+        db.add(StockMovement(product_id=p.id, kind="entrada", motive="compra", qty=p.stock,
+                             prev_stock=0, new_stock=p.stock, reason="Stock inicial al registrar el producto", user_id=u.id))
+    log(db, u, "PRODUCTO_CREADO", f"{code} - {name} ({d.unit}), stock inicial {p.stock:g}, {len(d.presentations)} presentación(es)")
     db.commit()
     return {"ok": True, "id": p.id}
 
@@ -125,6 +131,8 @@ def update_product(pid: int, d: ProductIn, u=Depends(need("products.write")), db
     for x in d.presentations:
         if x.id and x.id in current:
             pr = current[x.id]
+            if pr.price != x.price:
+                log(db, u, "PRECIO_CAMBIADO", f"{p.name} · {pr.name}: S/ {pr.price:.2f} -> S/ {x.price:.2f}")
             pr.name, pr.factor, pr.price = x.name.strip(), x.factor, x.price
             pr.barcode = x.barcode.strip() or None
             keep.add(x.id)

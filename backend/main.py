@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from db import Base, engine
-import r_auth, r_catalog, r_sales, r_cash, r_reports
+import r_auth, r_catalog, r_sales, r_cash, r_reports, r_business
 
 if os.getenv("APP_ENV", "").lower() in ("prod", "production") and len(os.getenv("STOCKUP_SECRET", "")) < 32:
     raise RuntimeError("En producción configura STOCKUP_SECRET con al menos 32 caracteres aleatorios.")
@@ -16,7 +16,7 @@ origins = [x.strip() for x in os.getenv("STOCKUP_FRONTEND_ORIGINS", "https://nik
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,
                    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
 
-for m in (r_auth, r_catalog, r_sales, r_cash, r_reports):
+for m in (r_auth, r_catalog, r_sales, r_cash, r_reports, r_business):
     app.include_router(m.router)
 
 

@@ -76,7 +76,14 @@ def dashboard(u=Depends(need("dashboard")), db=Depends(get_db)):
         events = [{"date": iso(a.created_at), "user": usr.full_name if usr else "—",
                    "action": a.action, "detail": a.detail} for a, usr in ev]
 
+    cash_session = None
+    if u.role == "cajero":
+        active_cash = db.query(CashSession).filter_by(user_id=u.id, status="abierta").first()
+        cash_session = ({"open": True, "opening_amount": round(active_cash.opening_amount or 0, 2),
+                         "opened_at": iso(active_cash.opened_at)} if active_cash else {"open": False})
+
     return {
+        "cash_session": cash_session,
         "sales_today": sales_today, "count_today": count_today,
         "expenses_today": expenses_today, "profit_today": profit_today,
         "products": db.query(func.count(Product.id)).filter(Product.active == True).scalar(),
