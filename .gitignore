@@ -1,20 +1,89 @@
-# Contraseñas y claves: nunca se suben
+# ==========================================
+# CREDENCIALES Y VARIABLES DE ENTORNO
+# ==========================================
 .env
 .env.*
+!.env.example
 backend/.env
+frontend/.env
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
 
-# Entorno de Python y archivos temporales
+# ==========================================
+# ENTORNOS DE PYTHON
+# ==========================================
 venv/
+.venv/
 backend/venv/
+backend/.venv/
 __pycache__/
-*.pyc
+**/__pycache__/
+*.py[cod]
+*$py.class
 
-# Bases de datos locales
+# ==========================================
+# BASES DE DATOS LOCALES
+# ==========================================
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
 *.sqlite3
+*.sqlite-*
+*.bak
+*.backup
+*.dump
 
-# Configuración personal de VS Code
-.vscode/
-
-# Copias locales del proyecto (no publicar)
+# ==========================================
+# DATOS Y EXPORTACIONES LOCALES
+# ==========================================
 _backups/
+backups/
+exports/
+local_data/
+uploads/
+*.csv
+*.xlsx
+*.xls
+*.jsonl
+
+# ==========================================
+# CONFIGURACIÓN PERSONAL
+# ==========================================
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# DEPENDENCIAS Y COMPILACIÓN
+# ==========================================
+node_modules/
+dist/
+build/
+coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+
+# ==========================================
+# REGISTROS Y ARCHIVOS TEMPORALES
+# ==========================================
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# ==========================================
+# SISTEMA OPERATIVO
+# ==========================================
+desktop.ini
+$RECYCLE.BIN/

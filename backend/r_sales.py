@@ -24,6 +24,7 @@ class SaleIn(BaseModel):
     customer_doc: str = ""
     customer_name: str = ""
     customer_address: str = ""
+    customer_identification_requested: bool = False
     idempotency_key: str = ""
     discount_amount: float = 0
     authorization_id: str = ""
@@ -82,27 +83,31 @@ def check_customer(d, total):
     doc = d.customer_doc.strip()
     name = d.customer_name.strip()
     addr = d.customer_address.strip()
-    if d.doc_type == "nota_interna" and total > 5:
-        raise HTTPException(400, "Para ventas mayores a S/ 5.00 debes emitir boleta o factura; la nota interna no es un comprobante de pago.")
+    if d.doc_type == "nota_interna":
+        return "", "", "", ""
+    if d.doc_type == "comprobante_interno":
+        if doc and not (doc.isascii() and doc.isdigit() and len(doc) in (8, 11)):
+            raise HTTPException(400, "El documento del cliente debe ser un DNI de 8 dígitos o un RUC de 11 dígitos")
+        doc_type = "DNI" if len(doc) == 8 else "RUC" if len(doc) == 11 else ""
+        return doc_type, doc, name, addr
     if d.doc_type == "factura":
-        if not (doc.isdigit() and len(doc) == 11 and doc[:2] in ("10", "15", "16", "17", "20")):
+        if not (doc.isascii() and doc.isdigit() and len(doc) == 11 and doc[:2] in ("10", "15", "16", "17", "20")):
             raise HTTPException(400, "Para factura se requiere un RUC válido de 11 dígitos (empieza con 10, 15, 16, 17 o 20)")
         if len(name) < 3:
             raise HTTPException(400, "Para factura se requiere la razón social del cliente")
         return "RUC", doc, name, addr
     if d.doc_type == "boleta":
-        if doc and not (doc.isdigit() and len(doc) == 8):
+        if doc and not (doc.isascii() and doc.isdigit() and len(doc) == 8):
             raise HTTPException(400, "El DNI debe tener 8 dígitos")
-        if total > BOLETA_LIMIT and not (doc and name):
-            raise HTTPException(400, f"Para boletas mayores a S/ {BOLETA_LIMIT:.0f} se requieren el DNI y el nombre del cliente")
+        identification_required = total > BOLETA_LIMIT or d.customer_identification_requested
+        if identification_required and not (doc and name):
+            raise HTTPException(400, "Para identificar al cliente en una boleta se requieren el DNI y el nombre")
         return ("DNI" if doc else ""), doc, name, addr
     return "", "", name, ""
 
 
 @router.post("/sales")
 def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
-    if u.role != "cajero":
-        raise HTTPException(403, "El registro de ventas está habilitado solo para el rol Cajero")
     sale_request, prior_receipt = reserve_sale_request(d,u,db)
     if prior_receipt is not None:
         return prior_receipt
@@ -112,8 +117,6 @@ def create_sale(d: SaleIn, u=Depends(need("sales.create")), db=Depends(get_db)):
         raise HTTPException(400, "Forma de pago no válida")
     if d.doc_type not in SERIES:
         raise HTTPException(400, "Tipo de comprobante no válido")
-    if d.doc_type in ("boleta", "factura") and not CPE_ENABLED:
-        raise HTTPException(503, "La emisión electrónica aún no está conectada con SUNAT. No se registró la venta; configura el sistema de emisión y vuelve a intentarlo.")
     cs = db.query(CashSession).filter_by(user_id=u.id, status="abierta").first()
     if not cs:
         raise HTTPException(400, "Debes abrir tu caja antes de vender")

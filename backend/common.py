@@ -16,10 +16,18 @@ PERMS = {
     "admin": ["*"],
     "almacen": ["dashboard", "products.read", "products.write", "costs.read", "stock.read", "stock.adjust"],
     "cajero": ["dashboard", "products.read", "sales.create", "sales.own", "cash.own", "expenses.create", "notifications.read"],
-    "supervisor": ["dashboard", "products.read", "products.write", "sales.read", "cash.review", "audit.read",
+    "supervisor": ["dashboard", "products.read", "sales.read", "cash.review", "audit.read",
                    "profit.read", "expenses.read", "expenses.manage", "stock.read", "finance.read",
                    "purchases.manage", "purchases.read", "notifications.read", "discount.approve"],
     "contador": ["dashboard", "products.read", "sales.read", "costs.read", "profit.read", "expenses.read"],
+}
+
+ROLE_LABELS = {
+    "admin": "Administrador",
+    "almacen": "Almacén",
+    "cajero": "Cajero",
+    "supervisor": "Supervisor",
+    "contador": "Contador",
 }
 
 # ---------- Catálogos ----------
@@ -33,10 +41,23 @@ PAYMENTS = {
     "transferencia": "Transferencia bancaria",
     "billetera": "Otra billetera digital",
 }
-SERIES = {"boleta": "B001", "factura": "F001", "nota_interna": "NV01"}
-DOC_NAMES = {"boleta": "Boleta de venta electrónica", "factura": "Factura electrónica", "nota_interna": "Nota de venta interna"}
-BOLETA_LIMIT = 700.0   # SUNAT exige identificar al adquirente si la boleta supera S/ 700.00
-CPE_ENABLED = False    # No se habilita hasta integrar y validar un emisor electrónico autorizado.
+SERIES = {
+    "boleta": "BI01",                 # serie interna simulada, no tributaria
+    "factura": "FI01",                # serie interna simulada, no tributaria
+    "nota_interna": "INT",            # serie interna para notas de venta nuevas
+    "comprobante_interno": "INT",
+}
+ESTABLISHMENT_NAME = os.getenv("STOCKUP_ESTABLISHMENT_NAME", "Stock Up").strip() or "Stock Up"
+ESTABLISHMENT_RUC = os.getenv("STOCKUP_ESTABLISHMENT_RUC", "").strip()
+ESTABLISHMENT_ADDRESS = os.getenv("STOCKUP_ESTABLISHMENT_ADDRESS", "").strip()
+DOC_NAMES = {
+    "boleta": "Boleta de venta electrónica",
+    "factura": "Factura electrónica",
+    "nota_interna": "Nota de venta",
+    "comprobante_interno": "Comprobante interno de venta",
+}
+BOLETA_LIMIT = 700.0   # Umbral del proyecto para solicitar identificación en una boleta.
+CPE_ENABLED = False    # Metadato de compatibilidad; no controla el registro de ventas simuladas.
 IGV = 1.18             # se asume que los precios ya incluyen IGV (18%)
 EXPENSE_CATS = ["Proveedores", "Servicios", "Sueldos", "Transporte", "Mantenimiento", "Otros"]
 
@@ -79,8 +100,43 @@ def current_user(authorization: str = Header(None), db=Depends(get_db)):
     return u
 
 
+def get_additional_roles(u):
+    """Códigos válidos de los roles adicionales, sin duplicar el rol principal."""
+    if getattr(u, "role", None) == "admin":
+        return []
+    links = getattr(u, "additional_role_links", ()) or ()
+    codes = {
+        str(link.role_code).strip().lower()
+        for link in links
+        if getattr(link, "role_code", None)
+    }
+    return sorted(code for code in codes if code in PERMS and code not in (u.role, "admin"))
+
+
+def get_effective_roles(u):
+    """Rol principal más los roles adicionales válidos de la cuenta."""
+    primary = getattr(u, "role", None)
+    if primary == "admin":
+        return ["admin"]
+    return ([primary] if primary in PERMS else []) + get_additional_roles(u)
+
+
+def get_effective_permissions(u):
+    """Unión sin duplicados de los permisos de todos los roles efectivos."""
+    if getattr(u, "role", None) == "admin":
+        return ["*"]
+    permissions = set()
+    for role_code in get_effective_roles(u):
+        permissions.update(PERMS.get(role_code, ()))
+    return sorted(permissions)
+
+
+def has_role(u, role_code):
+    return role_code in get_effective_roles(u)
+
+
 def allowed(u, p):
-    ps = PERMS.get(u.role, [])
+    ps = get_effective_permissions(u)
     return "*" in ps or p in ps
 
 
@@ -110,7 +166,8 @@ def log(db, u, action, detail=""):
 
 def user_out(u):
     return {"id": u.id, "username": u.username, "full_name": u.full_name,
-            "role": u.role, "perms": PERMS.get(u.role, [])}
+            "role": u.role, "additional_roles": get_additional_roles(u),
+            "perms": get_effective_permissions(u)}
 
 
 # ---------- Fechas (hora de Lima, UTC-5) ----------
@@ -202,6 +259,10 @@ def receipt_out(sale, items, cashier):
         "id": sale.id, "status": sale.status, "void_reason": sale.void_reason or "",
         "doc_type": sale.doc_type, "doc_name": DOC_NAMES.get(sale.doc_type, sale.doc_type),
         "number": doc_label(sale), "date": iso(sale.created_at or datetime.utcnow()), "cashier": cashier,
+        "series": sale.doc_series or "", "correlative": sale.doc_number or 0,
+        "establishment": {"name": ESTABLISHMENT_NAME, "ruc": ESTABLISHMENT_RUC,
+                          "address": ESTABLISHMENT_ADDRESS},
+        "taxes_are_reference": sale.doc_type in ("boleta", "factura", "comprobante_interno"),
         "customer_doc_type": sale.customer_doc_type or "", "customer_doc": sale.customer_doc or "",
         "customer_name": sale.customer_name or "", "customer_address": sale.customer_address or "",
         "payment": PAYMENTS.get(sale.payment_method, sale.payment_method), "payment_ref": sale.payment_ref or "",
@@ -221,12 +282,25 @@ def http_json(url, body=None):
     req = urllib.request.Request(url, data=data, headers=headers, method="POST" if body is not None else "GET")
     try:
         with urllib.request.urlopen(req, timeout=8) as r:
-            return json.loads(r.read().decode("utf-8"))
+            result = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         if e.code in (404, 422):
             raise HTTPException(404, "No se encontró ese documento")
         if e.code in (401, 403):
-            raise HTTPException(503, "El token del servicio de consulta no es válido")
+            raise HTTPException(503, "La credencial de APISPERU no es válida o no tiene acceso a consultas")
+        if e.code == 429:
+            raise HTTPException(503, "APISPERU alcanzó el límite de consultas; inténtalo más tarde")
         raise HTTPException(502, "El servicio de consulta no respondió bien")
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, TimeoutError):
+            raise HTTPException(504, "APISPERU tardó demasiado en responder")
+        raise HTTPException(502, "No se pudo conectar con el servicio de consulta")
+    except TimeoutError:
+        raise HTTPException(504, "APISPERU tardó demasiado en responder")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(502, "APISPERU devolvió una respuesta inesperada")
     except Exception:
         raise HTTPException(502, "No se pudo conectar con el servicio de consulta")
+    if not isinstance(result, dict):
+        raise HTTPException(502, "APISPERU devolvió una respuesta inesperada")
+    return result

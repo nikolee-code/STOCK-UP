@@ -1,8 +1,8 @@
 import os, hashlib, secrets
 from datetime import datetime
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean, UniqueConstraint
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean, UniqueConstraint, CheckConstraint, text, event
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 load_dotenv()  # lee backend/.env
 
@@ -18,6 +18,13 @@ engine = create_engine(
     pool_pre_ping=True,
     connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
 )
+if DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False)
 Base = declarative_base()
 
@@ -42,6 +49,28 @@ class User(Base):
     password_hash = Column(String(200), nullable=False)
     role = Column(String(30), nullable=False)
     active = Column(Boolean, default=True)
+    additional_role_links = relationship(
+        "UserAdditionalRole", back_populates="user", foreign_keys="UserAdditionalRole.user_id",
+        cascade="all, delete-orphan", passive_deletes=True, lazy="selectin",
+    )
+
+
+class UserAdditionalRole(Base):
+    __tablename__ = "user_additional_roles"
+    __table_args__ = (
+        UniqueConstraint("user_id", "role_code", name="uq_user_additional_role"),
+        CheckConstraint(
+            "role_code IN ('almacen', 'cajero', 'supervisor', 'contador')",
+            name="ck_user_additional_role_allowed",
+        ),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_code = Column(String(30), nullable=False)
+    assigned_by = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+    user = relationship("User", back_populates="additional_role_links", foreign_keys=[user_id])
+    assigned_by_user = relationship("User", foreign_keys=[assigned_by])
 
 
 class Product(Base):

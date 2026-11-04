@@ -1,6 +1,6 @@
 VIEWS.dashboard = async function () {
   const d = await api("/dashboard");
-  const notices = me?.role === "cajero" ? await api("/notifications").catch(()=>[]) : [];
+  const notices = has("notifications.read") ? await api("/notifications").catch(()=>[]) : [];
   const low = d.low || [], days=d.days||[], recent=d.recent||[];
   const max=Math.max(1,...days.map(x=>Number(x.total)||0));
   const kpis=[kpi("Ventas de hoy",money(d.sales_today),"info"),d.expenses_today!==null?kpi("Egresos de hoy",money(d.expenses_today),"warn"):"",d.profit_today!==null?kpi("Ganancia estimada",money(d.profit_today),d.profit_today<0?"bad":"ok"):"",kpi("Productos activos",num(d.products)),kpi("Por reponer",num(d.low_count),d.low_count?"warn":"ok"),kpi("Agotados",num(d.out_count),d.out_count?"bad":"ok")].filter(Boolean).join("");

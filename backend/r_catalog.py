@@ -1,3 +1,4 @@
+import math
 from fastapi import APIRouter
 from common import *
 
@@ -25,6 +26,7 @@ class ProductIn(BaseModel):
     price: float
     min_stock: float = 5
     initial_stock: float = 0
+    current_stock: Optional[float] = None
     presentations: list[PresIn] = []
 
 
@@ -112,6 +114,13 @@ def update_product(pid: int, d: ProductIn, u=Depends(need("products.write")), db
     p = db.get(Product, pid)
     if not p or not p.active:
         raise HTTPException(404, "Producto no encontrado")
+    if d.current_stock is not None and not is_admin(u):
+        raise HTTPException(403, "Solo el administrador puede modificar directamente el stock actual")
+    if d.current_stock is not None:
+        if not math.isfinite(d.current_stock) or d.current_stock < 0:
+            raise HTTPException(400, "El stock actual debe ser un número válido no negativo")
+        if d.unit not in DECIMAL_UNITS and d.current_stock != int(d.current_stock):
+            raise HTTPException(400, "El stock actual debe ser entero para esta unidad")
     name, barcode = clean_product(d, db, pid)
     if d.unit != p.unit and p.stock != 0:
         raise HTTPException(400, "No se puede cambiar la unidad de un producto con stock. Deja el stock en 0 primero.")
@@ -143,6 +152,25 @@ def update_product(pid: int, d: ProductIn, u=Depends(need("products.write")), db
         if k not in keep:
             pr.active = False
             pr.barcode = None
+    if d.current_stock is not None:
+        previous_stock = r3(p.stock or 0)
+        updated_stock = r3(d.current_stock)
+        if updated_stock != previous_stock:
+            delta = r3(updated_stock - previous_stock)
+            db.add(StockMovement(
+                product_id=p.id,
+                kind="ajuste_administrativo",
+                motive="ajuste_administrativo",
+                note="Modificación desde edición administrativa del producto",
+                qty=delta,
+                prev_stock=previous_stock,
+                new_stock=updated_stock,
+                reason="Ajuste de stock realizado desde la edición administrativa del producto",
+                user_id=u.id,
+            ))
+            log(db, u, "INVENTARIO_AJUSTE_ADMIN",
+                f"{p.name}: {previous_stock:g} -> {updated_stock:g} {p.unit} desde edición administrativa")
+            p.stock = updated_stock
     log(db, u, "PRODUCTO_EDITADO", f"{code} - {name}")
     db.commit()
     return {"ok": True}
@@ -179,7 +207,11 @@ class MoveIn(BaseModel):
 def motive_label(m):
     if m.motive in MOTIVES:
         return MOTIVES[m.motive][0]
-    return {"venta": "Venta", "anulacion": "Anulación de venta"}.get(m.kind, m.kind or "")
+    return {
+        "venta": "Venta",
+        "anulacion": "Anulación de venta",
+        "ajuste_administrativo": "Ajuste administrativo desde edición del producto",
+    }.get(m.motive, m.kind or "")
 
 
 @router.post("/inventory/move")
