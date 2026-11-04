@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from sqlalchemy.exc import IntegrityError
 from common import *
 
 router = APIRouter(prefix="/api")
@@ -98,7 +99,7 @@ class ActiveIn(BaseModel):
 def download_backup(u=Depends(need("users.manage")), db=Depends(get_db)):
     """Exportación manual. Incluye hashes de contraseñas; debe guardarse en un lugar privado."""
     from datetime import date
-    models = [User, Product, Presentation, StockMovement, CashSession, CashIncome, Promotion, Sale, SaleItem, Expense, Supplier, Purchase, PurchaseItem, PurchasePayment, DiscountApproval, Setting, DocumentCounter, SaleRequest, AuditLog]
+    models = [User, UserAdditionalRole, Product, Presentation, StockMovement, CashSession, CashIncome, Promotion, Sale, SaleItem, Expense, Supplier, Purchase, PurchaseItem, PurchasePayment, DiscountApproval, Setting, DocumentCounter, SaleRequest, AuditLog]
     tables = {}
     for model in models:
         rows = db.query(model).all()
@@ -115,7 +116,8 @@ def download_backup(u=Depends(need("users.manage")), db=Depends(get_db)):
 
 @router.get("/users")
 def users(u=Depends(need("users.manage")), db=Depends(get_db)):
-    return [{"id": x.id, "username": x.username, "full_name": x.full_name, "role": x.role, "active": x.active}
+    return [{"id": x.id, "username": x.username, "full_name": x.full_name, "role": x.role,
+             "additional_roles": get_additional_roles(x), "active": x.active}
             for x in db.query(User).order_by(User.id)]
 
 
@@ -123,6 +125,113 @@ def users(u=Depends(need("users.manage")), db=Depends(get_db)):
 def users_basic(u=Depends(need_any("sales.read", "users.manage")), db=Depends(get_db)):
     """Lista corta para los filtros por cajero."""
     return [{"id": x.id, "full_name": x.full_name, "role": x.role} for x in db.query(User).order_by(User.full_name)]
+
+
+def ensure_role_manager(u):
+    if not is_admin(u) or not allowed(u, "users.manage"):
+        raise HTTPException(403, "Solo un administrador puede gestionar roles")
+
+
+def get_role_target(uid, db, for_update=False):
+    query = db.query(User).filter_by(id=uid)
+    if for_update:
+        query = query.with_for_update()
+    target = query.first()
+    if not target:
+        raise HTTPException(404, "Usuario no encontrado")
+    return target
+
+
+def validate_additional_role_codes(role_codes, target):
+    if len(role_codes) != len(set(str(code).strip().lower() for code in role_codes)):
+        raise HTTPException(400, "No se pueden repetir roles adicionales")
+    normalized = [str(code).strip().lower() for code in role_codes]
+    for code in normalized:
+        if not code:
+            raise HTTPException(400, "El código del rol es obligatorio")
+        if code == "admin":
+            raise HTTPException(400, "Administrador no puede asignarse como rol adicional")
+        if code not in PERMS:
+            raise HTTPException(400, "Rol inexistente")
+        if code == target.role:
+            raise HTTPException(400, "El rol principal no puede repetirse como adicional")
+    return sorted(normalized)
+
+
+def replace_user_additional_roles(target, desired_codes, expected_codes, actor, db):
+    if target.role == "admin":
+        raise HTTPException(400, "El administrador no necesita roles adicionales")
+    desired = validate_additional_role_codes(desired_codes, target)
+    expected = validate_additional_role_codes(expected_codes, target)
+    current = get_additional_roles(target)
+    if expected != current:
+        raise HTTPException(409, "Los roles cambiaron desde que abriste la ventana. Recarga y vuelve a intentarlo.")
+
+    removed = sorted(set(current) - set(desired))
+    added = sorted(set(desired) - set(current))
+    for code in removed:
+        db.query(UserAdditionalRole).filter_by(user_id=target.id, role_code=code).delete(synchronize_session=False)
+        log(db, actor, "ROL_ADICIONAL_QUITADO", f"{target.username}: {code}")
+    for code in added:
+        db.add(UserAdditionalRole(user_id=target.id, role_code=code, assigned_by=actor.id))
+        log(db, actor, "ROL_ADICIONAL_ASIGNADO", f"{target.username}: {code}")
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "No se pudieron guardar los roles; revisa las asignaciones actuales") from exc
+    db.expire(target, ["additional_role_links"])
+    return user_out(target)
+
+
+class AdditionalRoleIn(BaseModel):
+    role_code: str
+
+
+class AdditionalRolesUpdateIn(BaseModel):
+    role_codes: list[str]
+    expected_role_codes: list[str]
+
+
+@router.get("/roles")
+def available_roles(u=Depends(current_user)):
+    ensure_role_manager(u)
+    return [{"code": code, "label": ROLE_LABELS[code]} for code in PERMS if code != "admin"]
+
+
+@router.get("/users/{uid}/additional-roles")
+def get_user_additional_roles(uid: int, u=Depends(current_user), db=Depends(get_db)):
+    ensure_role_manager(u)
+    target = get_role_target(uid, db)
+    return {"id": target.id, "role": target.role, "additional_roles": get_additional_roles(target)}
+
+
+@router.put("/users/{uid}/additional-roles")
+def set_user_additional_roles(uid: int, d: AdditionalRolesUpdateIn, u=Depends(current_user), db=Depends(get_db)):
+    ensure_role_manager(u)
+    target = get_role_target(uid, db, for_update=True)
+    return replace_user_additional_roles(target, d.role_codes, d.expected_role_codes, u, db)
+
+
+@router.post("/users/{uid}/additional-roles")
+def add_user_additional_role(uid: int, d: AdditionalRoleIn, u=Depends(current_user), db=Depends(get_db)):
+    ensure_role_manager(u)
+    target = get_role_target(uid, db, for_update=True)
+    current = get_additional_roles(target)
+    return replace_user_additional_roles(target, current + [d.role_code], current, u, db)
+
+
+@router.delete("/users/{uid}/additional-roles/{role_code}")
+def remove_user_additional_role(uid: int, role_code: str, u=Depends(current_user), db=Depends(get_db)):
+    ensure_role_manager(u)
+    target = get_role_target(uid, db, for_update=True)
+    current = get_additional_roles(target)
+    normalized = validate_additional_role_codes([role_code], target)[0]
+    if normalized not in current:
+        raise HTTPException(404, "El rol adicional no está asignado")
+    remaining = [code for code in current if code != normalized]
+    return replace_user_additional_roles(target, remaining, current, u, db)
 
 
 @router.post("/users")
@@ -180,34 +289,36 @@ def put_settings(d: SettingsIn, u=Depends(need("settings.manage")), db=Depends(g
 
 
 # ---------- Consulta automática de DNI y RUC ----------
+def _lookup_text(data, key):
+    value = data.get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
 @router.get("/lookup/dni/{dni}")
-def lookup_dni(dni: str, u=Depends(need("sales.create"))):
-    dni = dni.strip()
-    if not (dni.isdigit() and len(dni) == 8):
+def lookup_dni(dni: str, u=Depends(need_any("sales.create", "purchases.manage"))):
+    if not (len(dni) == 8 and dni.isascii() and dni.isdigit()):
         raise HTTPException(400, "El DNI debe tener 8 dígitos")
     if not PERU_API_TOKEN:
-        raise HTTPException(503, "La consulta automática de APISPERU no está configurada. Un administrador debe guardar PERU_API_TOKEN en Render.")
+        raise HTTPException(503, "La consulta automática de APISPERU no está configurada en el backend")
     r = http_json(f"https://dniruc.apisperu.com/api/v1/dni/{dni}")
-    name = " ".join(v for v in [r.get("nombres"), r.get("apellidoPaterno"), r.get("apellidoMaterno")] if v)
-    name = (name or "").strip()
+    name = " ".join(v for v in (_lookup_text(r, "nombres"), _lookup_text(r, "apellidoPaterno"),
+                                _lookup_text(r, "apellidoMaterno")) if v).strip()
     if not name:
         raise HTTPException(404, "No se encontró ese DNI")
     return {"dni": dni, "name": name}
 
 
 @router.get("/lookup/ruc/{ruc}")
-def lookup_ruc(ruc: str, u=Depends(need("sales.create"))):
-    ruc = ruc.strip()
-    if not (ruc.isdigit() and len(ruc) == 11):
+def lookup_ruc(ruc: str, u=Depends(need_any("sales.create", "purchases.manage"))):
+    if not (len(ruc) == 11 and ruc.isascii() and ruc.isdigit()):
         raise HTTPException(400, "El RUC debe tener 11 dígitos")
     if not PERU_API_TOKEN:
-        raise HTTPException(503, "La consulta automática de APISPERU no está configurada. Un administrador debe guardar PERU_API_TOKEN en Render.")
+        raise HTTPException(503, "La consulta automática de APISPERU no está configurada en el backend")
     r = http_json(f"https://dniruc.apisperu.com/api/v1/ruc/{ruc}")
-    name = r.get("razonSocial")
-    address = " ".join(v for v in [r.get("direccion"), r.get("distrito"), r.get("provincia"),
-                                   r.get("departamento")] if v)
-    status, cond = r.get("estado"), r.get("condicion")
+    name = _lookup_text(r, "razonSocial")
+    address = " ".join(v for v in (_lookup_text(r, "direccion"), _lookup_text(r, "distrito"),
+                                   _lookup_text(r, "provincia"), _lookup_text(r, "departamento")) if v)
+    status, cond = _lookup_text(r, "estado"), _lookup_text(r, "condicion")
     if not name:
         raise HTTPException(404, "No se encontró ese RUC")
-    return {"ruc": ruc, "name": name.strip(), "address": (address or "").strip(),
-            "status": status or "", "condition": cond or ""}
+    return {"ruc": ruc, "name": name, "address": address, "status": status, "condition": cond}
